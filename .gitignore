@@ -1,0 +1,17 @@
+# Environment variables (never commit API keys)
+.env
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python cache & test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Runtime generated data
+decks/
+metrics.csv
+
