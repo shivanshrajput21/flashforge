@@ -1,0 +1,28 @@
+# Microservices vs Monolithic Architecture: Core Principles
+
+## Monolithic Architecture
+A monolithic application is built as a single unified unit. All components, including the user interface, business logic, and database access layers, are compiled and deployed together.
+
+### Advantages of Monoliths
+1. Simplicity in early stages: Easier to develop, test, and deploy initially.
+2. Direct function calls: Inter-component communication occurs in-memory with near-zero latency.
+3. Unified transaction management: Relational databases handle ACID transactions across the whole domain easily.
+
+### Drawbacks of Monolithic Systems
+1. Tight coupling: Changes in one module can inadvertently break unrelated modules.
+2. Scaling bottlenecks: The entire application must be scaled horizontally, even if only one resource-intensive subsystem requires more capacity.
+3. Deployment risk: Re-deploying requires stopping and replacing the entire monolithic binary.
+
+## Microservices Architecture
+Microservices structure an application as a collection of loosely coupled, fine-grained services. Each service is centered around a specific business capability, maintains its own data store, and communicates via network protocols such as HTTP REST or gRPC.
+
+### Core Tenets of Microservices
+1. Single Responsibility Principle: Each microservice owns one bounded domain context.
+2. Decentralized data management: Database per service prevents tight database coupling.
+3. Independent deployability: Teams can release updates independently without coordinated redeployments.
+
+### Inherent Complexity
+1. Distributed data consistency: Requires eventual consistency patterns like Sagas rather than ACID two-phase commits.
+2. Network latency & failure modes: Network boundaries introduce partial failures and circuit breaking requirements.
+3. Observability challenges: Distributed tracing (such as OpenTelemetry) becomes mandatory to track requests across dozens of service hops.
+

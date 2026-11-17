@@ -1,0 +1,86 @@
+# Comprehensive Study Notes: Operating Systems and Systems Programming
+
+## Chapter 1: Introduction to Operating Systems
+An operating system (OS) is software that manages computer hardware and software resources and provides common services for computer programs. The operating system acts as an intermediary between the user of a computer and the computer hardware.
+
+Operating system goals include executing user programs and making solving user problems easier, making the computer system convenient to use, and using the computer hardware in an efficient manner. A computer system can be divided roughly into four components: the hardware (the central processing unit, the memory, and input/output devices), the operating system, the application programs (such as word processors, spreadsheets, compilers, and web browsers), and the users.
+
+Hardware provides basic computing resources. The operating system controls and coordinates the use of the hardware among the various application programs for the various users. We can also view an operating system as a resource allocator. A computer system has many resources that may be required to solve a problem: CPU time, memory space, file-storage space, I/O devices, and so on. The operating system acts as the manager of these resources. Facing numerous and possibly conflicting requests for resources, the operating system must decide how to allocate them to specific programs and users so that it can operate the computer system efficiently and fairly.
+
+A slightly different view of an operating system emphasizes the need to control the various I/O devices and user programs. An operating system is a control program. A control program manages the execution of user programs to prevent errors and improper use of the computer. It is especially concerned with the operation and control of I/O devices.
+
+## Chapter 2: Computer System Structures and Booting
+For a computer to start running—for instance, when it is powered up or rebooted—it needs to have an initial program to run. This initial program, or bootstrap program, tends to be simple. Typically, it is stored within the computer hardware in read-only memory (ROM) or electrically erasable programmable read-only memory (EEPROM), known by the general term firmware. It initializes all aspects of the system, from CPU registers to device controllers to memory contents. The bootstrap program must know how to load the operating system and how to start executing that system. To accomplish this goal, the bootstrap program must locate the operating system kernel and load it into memory.
+
+Once the kernel is loaded and executing, it can start providing services to the system and its users. Some services are provided outside the kernel, by system programs that are loaded into memory at boot time to become system daemons, which run the entire time the kernel is running. On Linux, the first system program is typically systemd, and it starts many other daemons. Once this phase is complete, the system is fully booted, and the system waits for some event to occur.
+
+Events are almost always signaled by the occurrence of an interrupt from either the hardware or the software. Hardware may trigger an interrupt at any time by sending a signal to the CPU, usually by way of the system bus. Software may trigger an interrupt either by executing a special operation called a system call or through an error condition known as a trap or exception. When the CPU is interrupted, it stops what it is doing and immediately transfers execution to a fixed location. The fixed location usually contains the starting address where the service routine for the interrupt is located. The interrupt service routine executes; on completion, the CPU resumes the interrupted computation.
+
+## Chapter 3: Processes and Process Management
+A process is a program in execution. A process is more than the program code, which is sometimes known as the text section. It also includes the current activity, as represented by the value of the program counter and the contents of the processor's registers. A process generally also includes the process stack, which contains temporary data (such as function parameters, return addresses, and local variables), and a data section, which contains global variables. A process may also include a heap, which is memory that is dynamically allocated during process run time.
+
+Although two processes may be associated with the same program, they are nevertheless considered two separate execution sequences. For instance, several users may be running different copies of the mail program, or the same user may invoke many copies of the web browser. Each of these is a separate process; and even though the text sections are equivalent, the data, heap, and stack sections vary.
+
+As a process executes, it changes state. The state of a process is defined in part by the current activity of that process. A process may be in one of the following states:
+1. New: The process is being created.
+2. Running: Instructions are being executed.
+3. Waiting: The process is waiting for some event to occur (such as an I/O completion or reception of a signal).
+4. Ready: The process is waiting to be assigned to a processor.
+5. Terminated: The process has finished execution.
+
+Each process is represented in the operating system by a process control block (PCB)—also called a task control block. A PCB contains many pieces of information associated with a specific process, including process state, program counter, CPU registers, CPU-scheduling information, memory-management information, accounting information, and I/O status information.
+
+The objective of multiprogramming is to have some process running at all times, to maximize CPU utilization. The objective of time sharing is to switch the CPU among processes so frequently that users can interact with each program while it is running. To meet these objectives, the process scheduler selects an available process for program execution on the CPU. For a single-processor system, there will never be more than one process running at a time. If there are more processes, the rest will have to wait until the CPU is free and can be rescheduled.
+
+## Chapter 4: Threads and Concurrency
+A thread is a basic unit of CPU utilization; it comprises a thread ID, a program counter, a register set, and a stack. It shares with other threads belonging to the same process its code section, data section, and other operating-system resources, such as open files and signals. A traditional process has a single thread of control. If a process has multiple threads of control, it can perform more than one task at a time.
+
+Many software packages that run on modern desktop PCs are multithreaded. An application typically is implemented as a separate process with several threads of control. A web browser might have one thread display images or text while another thread retrieves data from the network. A word processor may have a thread for displaying graphics, another thread for responding to keystrokes from the user, and a third thread for performing spelling and grammar checking in the background.
+
+The benefits of multithreaded programming can be broken down into four major categories:
+1. Responsiveness: Multithreading an interactive application may allow a program to continue running even if part of it is blocked or is performing a lengthy operation, thereby increasing responsiveness to the user.
+2. Resource sharing: Processes can share resources only through techniques such as shared memory and message passing. Such techniques must be explicitly arranged by the programmer. However, threads share the memory and the resources of the process to which they belong by default.
+3. Economy: Allocating memory and resources for process creation is costly. Because threads share the resources of the process to which they belong, it is more economical to create and context-switch threads.
+4. Scalability: The benefits of multithreading can be even greater in a multiprocessor architecture, where threads may be running in parallel on different processing cores.
+
+Multicore systems put new pressure on system programmers, who must write programs that take advantage of these processing cores. Five areas present challenges in programming for multicore systems: identifying tasks, balance, data splitting, data dependency, and testing and debugging. Parallelism and concurrency are closely related concepts. A system is parallel if it can perform more than one task simultaneously. In contrast, a concurrent system supports more than one task by allowing all the tasks to make progress. Thus, it is possible to have concurrency without parallelism before the advent of multicore processing architectures.
+
+## Chapter 5: Process Synchronization and Race Conditions
+Cooperating processes can either directly share a logical address space or be allowed to share data only through files or messages. The concurrent access to shared data may result in data inconsistency. Maintaining data consistency requires mechanisms to ensure the orderly execution of cooperating processes.
+
+A situation where several processes access and manipulate the same data concurrently and the outcome of the execution depends on the particular order in which the access takes place, is called a race condition. To guard against the race condition, we need to ensure that only one process at a time can manipulate the shared data. To make that guarantee, we require that the processes be synchronized in some way.
+
+The critical-section problem is to design a protocol that the processes can use to cooperate. Each process has a segment of code, called a critical section, in which the process may be changing common variables, updating a table, writing a file, and so on. The important feature of the system is that, when one process is executing in its critical section, no other process is allowed to execute in its critical section. That is, no two processes are executing in their critical sections at the same time. The critical-section problem is to design a protocol that the processes can use to coordinate their activities.
+
+A solution to the critical-section problem must satisfy the following three requirements:
+1. Mutual Exclusion: If process Pi is executing in its critical section, then no other processes can be executing in their critical sections.
+2. Progress: If no process is executing in its critical section and some processes wish to enter their critical sections, then only those processes that are not executing in their remainder sections can participate in deciding which will enter its critical section next, and this selection cannot be postponed indefinitely.
+3. Bounded Waiting: There exists a bound, or limit, on the number of times that other processes are allowed to enter their critical sections after a process has made a request to enter its critical section and before that request is granted.
+
+Hardware features available on many systems can be used directly as simple synchronization tools, or they can be used to form the foundation of more complex synchronization mechanisms. Software tools include mutex locks, semaphores, monitors, and condition variables. A mutex lock provides mutual exclusion by requiring a process to acquire a lock before entering a critical section and release it upon exiting. Semaphores are integer variables that, apart from initialization, are accessed only through two standard atomic operations: wait() and signal().
+
+## Chapter 6: Deadlocks and Resource Allocation
+In a multiprogramming environment, several processes may compete for a finite number of resources. A process requests resources; if the resources are not available at that time, the process enters a waiting state. Sometimes, a waiting process is never again able to change state, because the resources it has requested are held by other waiting processes. This situation is called a deadlock.
+
+A deadlock situation can arise if and only if the following four conditions hold simultaneously in a system:
+1. Mutual Exclusion: At least one resource must be held in a nonsharable mode; that is, only one process at a time can use the resource. If another process requests that resource, the requesting process must be delayed until the resource has been released.
+2. Hold and Wait: A process must be holding at least one resource and waiting to acquire additional resources that are currently being held by other processes.
+3. No Preemption: Resources cannot be preempted; that is, a resource can be released only voluntarily by the process holding it, after that process has completed its task.
+4. Circular Wait: A set {P0, P1, ..., Pn} of waiting processes must exist such that P0 is waiting for a resource held by P1, P1 is waiting for a resource held by P2, ..., Pn-1 is waiting for a resource held by Pn, and Pn is waiting for a resource held by P0.
+
+Generally speaking, we can deal with the deadlock problem in one of three ways:
+1. We can use a protocol to prevent or avoid deadlocks, ensuring that the system will never enter a deadlocked state.
+2. We can allow the system to enter a deadlocked state, detect it, and recover.
+3. We can ignore the problem altogether and pretend that deadlocks never occur in the system.
+
+Deadlock prevention provides a set of methods to ensure that at least one of the necessary conditions cannot hold. Deadlock avoidance requires that the operating system be given additional advance information concerning which resources a process will request and use during its lifetime. With this additional knowledge, the operating system can decide for each request whether or not the process should wait. To decide whether the current request can be satisfied or must be delayed, the system must consider the resources currently available, the resources currently allocated to each process, and the future requests and releases of each process. A widely known avoidance algorithm is Dijkstra's Banker's Algorithm.
+
+## Chapter 7: Memory Management and Virtual Memory
+Memory consists of a large array of bytes, each with its own address. The CPU fetches instructions from memory according to the value of the program counter. These instructions may cause additional loading from and storing to specific memory addresses. A typical instruction-execution cycle, for example, first fetches an instruction from memory. The instruction is then decoded and may cause operands to be fetched from memory. After the instruction has been executed on the operands, results may be stored back in memory. The memory unit sees only a stream of memory addresses; it does not know how they are generated or what they are for.
+
+Program must be brought into memory and placed within a process for it to be executed. Main memory and registers are the only storage CPU can access directly. Memory management algorithms range from a primitive bare-machine approach to paging and segmentation strategies.
+
+Virtual memory is a technique that allows the execution of processes that are not completely in memory. One major advantage of this scheme is that programs can be larger than physical memory. Further, virtual memory abstracts main memory into an extremely large, uniform array of storage, separating logical memory as viewed by the user from physical memory. This technique frees programmers from the concerns of memory-storage limitations. Virtual memory also allows processes to share files and address spaces and to implement an efficient mechanism for process creation.
+
+Virtual memory is commonly implemented by demand paging. In demand paging, pages of an executing process are loaded only on demand—when they are accessed during program execution. Pages that are never accessed are thus never loaded into physical memory. If the process tries to access a page that was not brought into memory, a page fault trap occurs. The operating system handles the page fault by allocating a physical frame, reading the desired page from secondary storage into the frame, updating the page table, and restarting the instruction that was interrupted by the trap. When no physical frames are free, page replacement algorithms such as FIFO, Optimal, and LRU (Least Recently Used) determine which frame to evict to disk.
+

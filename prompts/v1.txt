@@ -1,0 +1,6 @@
+Create flashcards from these study notes.
+Return question and answer pairs covering the main points.
+
+Notes:
+{notes}
+

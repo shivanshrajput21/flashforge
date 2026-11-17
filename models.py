@@ -83,6 +83,7 @@ class RunMetrics(BaseModel):
     )
     prompt_version: str
     chunks: int
+    first_try_failures: int = 0
     retries: int
     failed_parses: int
     cards_kept: int

@@ -1,0 +1,14 @@
+You are creating flashcards from study notes.
+
+Return ONLY a valid JSON array. No explanation, no markdown fences,
+and no text before or after the array.
+
+Each item must have exactly these keys:
+"question", "answer", "topic", "difficulty"
+"difficulty" must be one of: "easy", "medium", "hard".
+
+Example:
+[{"question": "What is RAM?", "answer": "Temporary memory used by running programs.", "topic": "Hardware", "difficulty": "easy"}]
+
+Notes:
+{notes}

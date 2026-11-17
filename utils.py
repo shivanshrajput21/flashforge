@@ -8,15 +8,6 @@ from pypdf import PdfReader
 
 from models import Flashcard
 
-_PAGE_NUMBER_RE = re.compile(
-    r"^\s*(?:page\s*)?\d+(?:\s*(?:/|of)\s*\d+)?\s*$",
-    re.IGNORECASE,
-)
-_HEADING_RE = re.compile(
-    r"^(?:#{1,6}\s+.+|\d+(?:\.\d+)*\.?\s+[A-Z].+)$",
-    re.MULTILINE,
-)
-
 
 def extract_text(source: str | BinaryIO, filename: str | None = None) -> str:
     """Extract raw text from pasted strings, .txt files, or .pdf files."""
@@ -67,26 +58,104 @@ def clean_text(text: str) -> str:
     return joined.strip()
 
 
+_PAGE_NUMBER_RE = re.compile(
+    r"^\s*(?:page\s*)?\d+(?:\s*(?:/|of)\s*\d+)?\s*$",
+    re.IGNORECASE,
+)
+# Match markdown headers (# through ###) OR short title lines (e.g. "1. Introduction", "Chapter 3")
+# with no colons, no punctuation-terminated body sentences, and length <= 60 chars.
+_MARKDOWN_HEADING_RE = re.compile(r"^\s*#{1,3}\s+\S.*$")
+_NUMBERED_TITLE_RE = re.compile(r"^\s*(?:\d+(?:\.\d+)*\.?|chapter\s+\d+)\s+[^:\n]{2,50}$", re.IGNORECASE)
+
+
+def _is_heading_line(line: str) -> bool:
+    """Identify if a line is a true heading vs a numbered list item or body sentence."""
+    stripped = line.strip()
+    if not stripped or len(stripped) > 70:
+        return False
+    if _MARKDOWN_HEADING_RE.match(stripped):
+        return True
+    if _NUMBERED_TITLE_RE.match(stripped):
+        # Exclude list items that contain colon definitions or trailing sentence periods
+        if ":" in stripped or stripped.endswith("."):
+            return False
+        return True
+    return False
+
+
 def _split_by_headings(text: str) -> list[str]:
-    """Split text into sections starting at markdown or numbered headings."""
-    matches = list(_HEADING_RE.finditer(text))
-    if not matches:
-        return [text] if text.strip() else []
-
+    """Split text into sections starting at markdown (#..###) or short title lines."""
+    lines = text.split("\n")
     sections: list[str] = []
-    if matches[0].start() > 0:
-        preamble = text[: matches[0].start()].strip()
-        if preamble:
-            sections.append(preamble)
+    current_lines: list[str] = []
 
-    for i, match in enumerate(matches):
-        start = match.start()
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-        section = text[start:end].strip()
-        if section:
-            sections.append(section)
+    for line in lines:
+        if _is_heading_line(line):
+            if current_lines:
+                sec = "\n".join(current_lines).strip()
+                if sec:
+                    sections.append(sec)
+                current_lines = []
+        current_lines.append(line)
+
+    if current_lines:
+        sec = "\n".join(current_lines).strip()
+        if sec:
+            sections.append(sec)
 
     return sections
+
+
+def _merge_small_sections(
+    sections: list[str],
+    min_words: int = 150,
+    max_words: int = 700,
+) -> list[str]:
+    """Merge small consecutive sections so each chunk has at least min_words (up to max_words).
+
+    A heading never remains isolated because it is joined with subsequent sections.
+    """
+    if not sections:
+        return []
+
+    merged: list[str] = []
+    buffer: list[str] = []
+    buffer_words = 0
+
+    for sec in sections:
+        sec_words = len(sec.split())
+        if not buffer:
+            buffer.append(sec)
+            buffer_words = sec_words
+            continue
+
+        if buffer_words < min_words and (buffer_words + sec_words) <= max_words:
+            buffer.append(sec)
+            buffer_words += sec_words
+        elif buffer_words < min_words and (buffer_words + sec_words) > max_words:
+            # Buffer must be flushed even if small if next section pushes past max_words
+            merged.append("\n\n".join(buffer).strip())
+            buffer = [sec]
+            buffer_words = sec_words
+        else:
+            # Buffer has met min_words
+            merged.append("\n\n".join(buffer).strip())
+            buffer = [sec]
+            buffer_words = sec_words
+
+    if buffer:
+        final_sec = "\n\n".join(buffer).strip()
+        if merged and len(final_sec.split()) < min_words:
+            # If the trailing remainder is tiny, fold it into the previous chunk if it fits
+            prev_words = len(merged[-1].split())
+            if prev_words + len(final_sec.split()) <= max_words:
+                merged[-1] = f"{merged[-1]}\n\n{final_sec}".strip()
+            else:
+                merged.append(final_sec)
+        else:
+            merged.append(final_sec)
+
+    return merged
 
 
 def _split_words_with_overlap(
@@ -111,20 +180,28 @@ def _split_words_with_overlap(
 
 def chunk_text(
     text: str,
+    min_words: int = 150,
     max_words: int = 700,
     overlap_words: int = 50,
 ) -> list[str]:
-    """Split text by headings first, then sub-split oversized sections with overlap."""
+    """Split text by headings, merge small sections to >= min_words, and split oversized sections."""
     if not text or not text.strip():
         return []
 
-    chunks: list[str] = []
-    for section in _split_by_headings(text):
-        if len(section.split()) <= max_words:
-            chunks.append(section)
+    raw_sections = _split_by_headings(text)
+    merged_sections = _merge_small_sections(raw_sections, min_words=min_words, max_words=max_words)
+
+    final_chunks: list[str] = []
+    for section in merged_sections:
+        words_count = len(section.split())
+        if words_count <= max_words:
+            final_chunks.append(section)
         else:
-            chunks.extend(_split_words_with_overlap(section, max_words, overlap_words))
-    return chunks
+            final_chunks.extend(
+                _split_words_with_overlap(section, max_words=max_words, overlap_words=overlap_words)
+            )
+
+    return final_chunks
 
 
 def _normalize_question(question: str) -> str:
