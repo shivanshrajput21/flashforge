@@ -14,4 +14,6 @@ __pycache__/
 # Runtime generated data
 decks/
 metrics.csv
+results/
+raw_outputs/
 

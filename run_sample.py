@@ -22,6 +22,11 @@ def main():
         default="v1",
         help="Prompt version name in prompts/ (default: v1)",
     )
+    parser.add_argument(
+        "--save-raw",
+        action="store_true",
+        help="Save raw LLM outputs to raw_outputs/{sample}_{version}_chunk{n}_attempt{k}.txt",
+    )
     args = parser.parse_args()
 
     file_path = Path(args.file)
@@ -37,8 +42,14 @@ def main():
     print(f"Using prompt version: {args.prompt}")
     print("Calling Gemini API...")
 
+    raw_prefix = f"{file_path.stem}_{args.prompt}" if args.save_raw else None
+
     try:
-        cards, metrics = generate_cards(raw_text, prompt_version=args.prompt)
+        cards, metrics = generate_cards(
+            raw_text,
+            prompt_version=args.prompt,
+            raw_output_prefix=raw_prefix,
+        )
     except Exception as e:
         print(f"\nExecution failed: {e}")
         sys.exit(1)
@@ -50,6 +61,7 @@ def main():
     print(f"First-try Failures:  {metrics.first_try_failures}")
     print(f"Retries Used:        {metrics.retries}")
     print(f"Failed Parses:       {metrics.failed_parses}")
+    print(f"API Failures:        {metrics.api_failures}")
     print(f"Cards Kept:          {metrics.cards_kept}")
     print(f"Cards Dropped:       {metrics.cards_dropped}")
 

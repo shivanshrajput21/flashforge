@@ -15,6 +15,10 @@ from utils import chunk_text, clean_text, deduplicate
 load_dotenv()
 
 
+# Default delay in seconds between chunk calls to stay well under 15 RPM
+CHUNK_DELAY_SECONDS = 4.0
+
+
 def get_client() -> genai.Client:
     """Initialize and return the Gemini API client using GEMINI_API_KEY from .env."""
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
@@ -29,12 +33,19 @@ def get_model_name() -> str:
 
 
 def load_prompt(version: str, notes: str) -> str:
-    """Read prompts/{version}.txt and substitute {notes} placeholder."""
+    """Read prompts/{version}.txt and substitute {notes} placeholder.
+
+    Uses .replace() so curly braces inside prompt examples (e.g. JSON schemas)
+    are preserved without causing str.format KeyError issues.
+    """
     prompt_path = Path("prompts") / f"{version}.txt"
     if not prompt_path.is_file():
         raise FileNotFoundError(f"Prompt template not found: {prompt_path}")
 
     template = prompt_path.read_text(encoding="utf-8")
+    if "{notes}" not in template:
+        raise ValueError(f"Prompt template '{prompt_path}' is missing required '{{notes}}' placeholder.")
+
     return template.replace("{notes}", notes)
 
 
@@ -88,13 +99,17 @@ def _extract_retry_delay_seconds(error_message: str, default_delay: float) -> fl
     return default_delay
 
 
-def _call_gemini(client: genai.Client, model: str, prompt: str) -> str:
-    """Execute single LLM call and return text response, with backoff on transient errors."""
+def _call_gemini(
+    client: genai.Client,
+    model: str,
+    prompt: str,
+    backoff_delays: tuple[float, ...] = (5.0, 15.0, 30.0, 60.0, 90.0),
+) -> str:
+    """Execute single LLM call with backoff on 503/429/demand errors."""
     import time
-    max_api_attempts = 4
-    delay = 2.0
 
-    for attempt in range(1, max_api_attempts + 1):
+    total_attempts = len(backoff_delays) + 1
+    for attempt_idx in range(total_attempts):
         try:
             response = client.models.generate_content(
                 model=model,
@@ -102,20 +117,25 @@ def _call_gemini(client: genai.Client, model: str, prompt: str) -> str:
             )
             return response.text or ""
         except errors.APIError as e:
-            # 503 Service Unavailable / high demand or 429 Rate Limit
             msg = str(e).lower()
-            if (e.code in (429, 503) or "demand" in msg or "quota" in msg) and attempt < max_api_attempts:
-                wait_time = _extract_retry_delay_seconds(str(e), delay)
-                time.sleep(wait_time)
-                delay *= 2
+            is_transient = e.code in (429, 503) or "demand" in msg or "quota" in msg or "unavailable" in msg
+            if is_transient and attempt_idx < len(backoff_delays):
+                delay = _extract_retry_delay_seconds(str(e), backoff_delays[attempt_idx])
+                print(f"Server busy ({e.code or 'high demand'}), waiting {delay:.1f}s...")
+                time.sleep(delay)
                 continue
             raise RuntimeError(f"Gemini API Error ({e.code}): {e.message}") from e
         except Exception as e:
-            if attempt < max_api_attempts:
+            msg = str(e).lower()
+            is_transient = "503" in msg or "429" in msg or "demand" in msg or "unavailable" in msg
+            if is_transient and attempt_idx < len(backoff_delays):
+                delay = backoff_delays[attempt_idx]
+                print(f"Server busy, waiting {delay:.1f}s...")
                 time.sleep(delay)
-                delay *= 2
                 continue
             raise RuntimeError(f"Gemini Request Failed: {e}") from e
+
+    raise RuntimeError("Gemini API call failed after all retry attempts.")
 
 
 def generate_cards_for_chunk(
@@ -124,22 +144,41 @@ def generate_cards_for_chunk(
     chunk: str,
     prompt_version: str,
     max_retries: int = 2,
-) -> tuple[list[Flashcard], int, int, int, int]:
+    raw_output_prefix: str | None = None,
+    chunk_index: int = 1,
+) -> tuple[list[Flashcard], int, int, int, int, int]:
     """Process a single text chunk with Gemini.
 
-    Returns (valid_cards, retries_used, failed_parses, dropped_count, first_try_failed).
+    Returns (valid_cards, retries_used, failed_parses, dropped_count, first_try_failed, api_failed).
     Retries up to max_retries on JSON decode or schema structure errors.
+    If Gemini API fails after all backoff retries, returns api_failed=1 and continues.
     """
     retries = 0
     failed_parses = 0
     first_try_failed = 0
+    api_failed = 0
     prompt = load_prompt(prompt_version, chunk)
 
     while True:
+        attempt_number = retries + 1
+        raw_response = ""
         try:
             raw_response = _call_gemini(client, model, prompt)
+        except Exception as api_err:
+            print(f"Warning: Chunk {chunk_index} API call failed: {api_err}")
+            api_failed = 1
+            # Return empty cards for this chunk without breaking the entire run
+            return [], retries, failed_parses, 0, first_try_failed, api_failed
+
+        if raw_output_prefix:
+            out_dir = Path("raw_outputs")
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out_file = out_dir / f"{raw_output_prefix}_chunk{chunk_index}_attempt{attempt_number}.txt"
+            out_file.write_text(raw_response, encoding="utf-8")
+
+        try:
             cards, dropped = parse_and_validate(raw_response)
-            return cards, retries, failed_parses, dropped, first_try_failed
+            return cards, retries, failed_parses, dropped, first_try_failed, api_failed
         except (json.JSONDecodeError, ValueError, ValidationError) as parse_err:
             failed_parses += 1
             if retries == 0:
@@ -154,14 +193,15 @@ def generate_cards_for_chunk(
                 )
             else:
                 # Retries exhausted; return empty list for this chunk
-                return [], retries, failed_parses, 0, first_try_failed
+                return [], retries, failed_parses, 0, first_try_failed, api_failed
 
 
 def generate_cards(
     text: str,
     prompt_version: str = "v1",
     similarity_threshold: float = 0.85,
-    chunk_delay_seconds: float = 0.5,
+    chunk_delay_seconds: float = CHUNK_DELAY_SECONDS,
+    raw_output_prefix: str | None = None,
 ) -> tuple[list[Flashcard], RunMetrics]:
     """Full generation pipeline: clean, chunk, generate per chunk, merge, and deduplicate."""
     import time
@@ -189,22 +229,28 @@ def generate_cards(
     total_failed_parses = 0
     total_dropped = 0
     total_first_try_failures = 0
+    total_api_failures = 0
 
-    for idx, chunk in enumerate(chunks):
-        if idx > 0 and chunk_delay_seconds > 0:
+    for idx, chunk in enumerate(chunks, start=1):
+        if idx > 1 and chunk_delay_seconds > 0:
             time.sleep(chunk_delay_seconds)
 
-        chunk_cards, retries, failed_parses, dropped, first_try_failed = generate_cards_for_chunk(
-            client=client,
-            model=model,
-            chunk=chunk,
-            prompt_version=prompt_version,
+        chunk_cards, retries, failed_parses, dropped, first_try_failed, api_failed = (
+            generate_cards_for_chunk(
+                client=client,
+                model=model,
+                chunk=chunk,
+                prompt_version=prompt_version,
+                raw_output_prefix=raw_output_prefix,
+                chunk_index=idx,
+            )
         )
         all_raw_cards.extend(chunk_cards)
         total_retries += retries
         total_failed_parses += failed_parses
         total_dropped += dropped
         total_first_try_failures += first_try_failed
+        total_api_failures += api_failed
 
     # Deduplicate merged cards across chunks
     kept_cards = deduplicate(all_raw_cards, threshold=similarity_threshold)
@@ -217,6 +263,7 @@ def generate_cards(
         first_try_failures=total_first_try_failures,
         retries=total_retries,
         failed_parses=total_failed_parses,
+        api_failures=total_api_failures,
         cards_kept=len(kept_cards),
         cards_dropped=total_dropped,
     )

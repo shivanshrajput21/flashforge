@@ -86,6 +86,7 @@ class RunMetrics(BaseModel):
     first_try_failures: int = 0
     retries: int
     failed_parses: int
+    api_failures: int = 0
     cards_kept: int
     cards_dropped: int
 
