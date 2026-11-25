@@ -18,15 +18,15 @@ A Streamlit app that turns study notes (pasted text, `.txt`, or `.pdf`) into Q&A
    - Copy `.env.example` to `.env`
    - Add your `GEMINI_API_KEY` and (optionally) customize `GEMINI_MODEL`
 
-## Usage
+## Prompt Versions
 
-Run the Streamlit app (once built):
-```bash
-streamlit run app.py
-```
+FlashForge supports selectable and benchmarkable prompt versions located in `prompts/`:
+- **v1**: Deliberately simple baseline prompt without structural constraints.
+- **v2**: Enforces strict JSON array output, exact schema keys, and difficulty enums.
+- **v3**: Focuses on conceptual depth, mechanisms, causal reasoning, standalone clarity, anti-trivia rules, and source fidelity.
 
-Run unit tests:
+Run benchmark comparisons across prompt versions:
 ```bash
-pytest
+.venv\Scripts\python.exe compare_prompts.py --versions v1 v2 v3
 ```
 
